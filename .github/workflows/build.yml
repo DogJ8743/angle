@@ -1,0 +1,53 @@
+name: Build ANGLE Android APK
+
+on:
+  schedule:
+    - cron: "0 0 * * 0" # Runs every Sunday
+  workflow_dispatch: # Allows you to click "Run Workflow" manually
+
+jobs:
+  build-android:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Maximize Build Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git python3 curl wget xz-utils openjdk-17-jdk-headless
+
+      - name: Install Depot Tools
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          echo "$GITHUB_WORKSPACE/depot_tools" >> $GITHUB_PATH
+
+      - name: Fetch ANGLE Source
+        run: |
+          mkdir angle_build && cd angle_build
+          # Tell gclient we want Android dependencies
+          echo "target_os = ['android']" > .gclient
+          fetch --no-history angle
+          cd src
+          gclient sync
+
+      - name: Generate Build Files (GN)
+        run: |
+          cd angle_build/src
+          # Release build for ARM64 (standard for modern phones)
+          gn gen out/Android --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0'
+
+      - name: Compile APK
+        run: |
+          cd angle_build/src
+          autoninja -C out/Android angle_apks
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AngleLibraries-APK
+          path: angle_build/src/out/Android/apks/AngleLibraries.apk
